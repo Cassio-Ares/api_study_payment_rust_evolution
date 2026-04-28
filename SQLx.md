@@ -1,6 +1,6 @@
 # SQLx 
 
-SQLx é uma bilioteca que faz su Rust conversar com banco de dados 
+SQLx é uma biblioteca que faz seu Rust conversar com o banco de dados
 - ele envia SQL e recebe os resultados já convertidos para suas structs.
 
 ## postgres::PgPoolOptions
@@ -50,4 +50,38 @@ Pool = a garagem construída e funcionando
 
 ### OBS:
 
-Postgres -> é o tipo que 
+Postgres -> é o tipo que identifica qual banco está sendo usado
+
+O SQLx suporta varios banco como Postgres, MySQL, SQLite, ...
+
+Pool<> -> funciona como uma etiqueta
+
+`Pool<Postgres>` ->  este pool fala com PostgreSQL
+
+`Pool<MySql>`    -> este pool fala com MySQL
+
+`Pool<Sqlite>`   -> este pool fala com SQLite
+
+Por isso esses dois são equivalentes:
+
+pool: Pool<Postgres>  -> explícito
+
+pool: PgPool          -> atalho — mais comum no dia a dia
+
+````
+use sqlx::{
+  postgre::PgPoolOptions,  // configuração do pool 
+  Pool, // o pool pronto                    
+  Postgres // banco
+}
+         // tipo          // configuração
+let pool:Pool<Postgres> = PgPoolOptions::new()
+                          .max_connections(5)
+                          ,connect(&database_url)
+                          .await
+                          .expect("Failed to create pool.")
+
+App::new()
+  .app_data(web::Data::new(pool.clone()))
+                           // copia o pool para cada thread
+````
