@@ -8,7 +8,7 @@ use std::env;
 // mod services;
 // mod handlers;
 // mod routes;
-// mod errors;
+ mod errors;
 // mod traits;
 // mod utils;
 
