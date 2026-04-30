@@ -225,3 +225,194 @@ new_payment.validate()?;
     "code": "resource_not_found",
     "message": "Payment not found"
   }
+
+  ````
+  use actix_web::{http::StatusCOde, HttpResponse, ResponseError};
+  use serde::Serialize;
+  use std::fmt;
+
+//Nova struct que padroniza o resposta de erro
+
+ #[derive(Debug, Serialize)]
+struct ErrorResponse {
+  error: String,   // categoria do erro  → "NOT_FOUND"
+  code: String,    // código específico  → "payment_not_found"
+  message: String  // mensagem legível   → "Payment not found"
+}
+
+//Helper que constrói o ErrorResponse
+//evita repetição nos match abaixo
+
+impl ErrorResponse {
+  fn new(error: &str, code: &str, message: &str) -> Self {
+        ErrorResponse {
+            error: error.to_string(),
+            code: code.to_string(),
+            message: message.to_string(),
+        }
+    }
+}
+
+// Continua igual
+#[derive(Debug, Serialize)]
+pub enum ApiError {
+    NotFound(String),
+    InvalidInput(String),
+    InternalServerError(String),
+    DatabaseError(String),
+    Unauthorized(String), 
+    Conflict(String),
+}
+
+// Continua igual — é só para os logs do servidor
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ApiError::NotFound(msg) =>
+                write!(f, "Not Found: {}", msg),
+            ApiError::InvalidInput(msg) =>
+                write!(f, "Invalid Input: {}", msg),
+            ApiError::InternalServerError(msg) =>
+                write!(f, "Internal Server Error: {}", msg),
+            ApiError::DatabaseError(msg) =>
+                write!(f, "Database Error: {}", msg),
+            ApiError::Unauthorized(msg) =>
+                write!(f, "Unauthorized: {}", msg),
+            ApiError::Conflict(msg) =>
+                write!(f, "Conflict: {}", msg),
+        }
+    }
+}
+
+impl ResponseError for ApiError {
+  fn error_response(&self) -> HttpResponse {
+    match self{
+        // 404 — recurso não encontrado
+            ApiError::NotFound(msg) =>
+                HttpResponse::build(StatusCode::NOT_FOUND)
+                    .json(ErrorResponse::new(
+                        "NOT_FOUND",        // categoria
+                        "resource_not_found", // código
+                        msg,                // mensagem dinâmica
+                    )),
+            // cliente recebe:
+            // {
+            //   "error": "NOT_FOUND", 
+            //   "code": "resource_not_found", 
+            //   "message": "Payment not found"
+            // }
+            
+          // 400 — dado inválido
+            ApiError::InvalidInput(msg) =>
+                HttpResponse::build(StatusCode::BAD_REQUEST)
+                    .json(ErrorResponse::new(
+                        "BAD_REQUEST",
+                        "invalid_input",
+                        msg,
+                    )),
+
+        // 500 — erro genérico do servidor
+         // ⚠️ SEGURANÇA: msg nunca vai para o cliente
+            ApiError::InternalServerError(msg) => {
+                //⚠️ log com detalhes internos — só no servidor
+                log::error!("Internal server error: {}", msg);
+                HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
+                    .json(ErrorResponse::new(
+                        "INTERNAL_SERVER_ERROR",
+                        "internal_error",
+                        "An unexpected error occurred", // ← genérico para o cliente
+                    ))
+                // cliente NUNCA vê o msg interno
+            }
+
+           // 500 — erro do banco
+            // ⚠️ SEGURANÇA: msg nunca vai para o cliente
+            ApiError::DatabaseError(msg) => {
+                // ⚠️ detalhes do banco ficam só no log
+                log::error!("Database error: {}", msg);
+                HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
+                    .json(ErrorResponse::new(
+                        "INTERNAL_SERVER_ERROR",
+                        "database_error",
+                        "An unexpected error occurred", // ← genérico para o cliente
+                    ))
+                // cliente não sabe que foi erro do banco
+                // não vaza IP, porta ou query SQL
+            }
+    }
+  }
+}
+
+// Continua igual
+impl From<sqlx::Error> for ApiError {
+    fn from(err: sqlx::Error) -> ApiError {
+        ApiError::DatabaseError(err.to_string())
+        // to_string() aqui é ok — vai para o log, não para o cliente
+    }
+}
+
+
+impl From<validator::ValidationErrors> for ApiError {
+  fn from(err:validator::ValidationErrors) -> ApiError {
+    //coleta campo por campo
+    let message:Vec<String>  //err
+        .field_errors()
+        .iter()
+        .flat_map(|(field, errors)| {
+           errors.iter().filter_map(move |e| {
+                    e.message.as_ref().map(|m| {
+                        format!("{}: {}", field, m) // ex: "amount: O valor deve ser maior que zero"
+                    })
+                })
+        })
+        .collect();
+
+        // Junta todas as mensagens
+        let message = if messages.is_empty() {
+            "Validation error".to_string()
+        } else {
+            messages.join(", ")
+            // ex: "amount: O valor deve ser maior que zero, currency: A moeda não pode ser vazia"
+        };
+
+        ApiError::InvalidInput(message)
+  }
+}
+````
+
+
+
+// ❌ ANTES
+"Payment not found"  // só uma string solta
+
+
+// ✅ DEPOIS
+{
+    "error": "NOT_FOUND",
+    "code": "resource_not_found",
+    "message": "Payment not found"
+}
+
+// ❌ ANTES — DatabaseError expõe info interna
+{
+    "error": "Database Error: connection to server at 192.168.1.1 failed"
+}
+
+// ✅ DEPOIS — DatabaseError genérico para o cliente
+{
+    "error": "INTERNAL_SERVER_ERROR",
+    "code": "database_error",
+    "message": "An unexpected error occurred"
+}
+// log do servidor: "Database error: connection to server at 192.168.1.1 failed"
+
+
+// ❌ ANTES — ValidationErrors perde mensagens
+"Validation error"
+
+// ✅ DEPOIS — ValidationErrors com detalhes
+{
+    "error": "BAD_REQUEST",
+    "code": "invalid_input",
+    "message": "amount: O valor deve ser maior que zero, currency: A moeda não pode ser vazia"
+}
