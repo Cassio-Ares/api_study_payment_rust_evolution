@@ -147,4 +147,132 @@ impl fmt::Display for ClientName {
     write!(f, "{}", self.0) // self.0 acessa o String interno
   }
 }
+
+//ClientEmail -> garante que o email sempre tem formato válido 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
+pub struct ClientEmail(
+    #[validate(email(message = "Email must be a valid email address"))]
+    pub String,
+);
+
+impl From<String> for ClientEmail {
+    fn from(email: String) -> Self {
+        ClientEmail(email)
+    }
+}
+
+impl fmt::Display for ClientEmail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
+pub struct ClientAddress( // ← corrigido
+    #[validate(length(
+        min = 5,
+        max = 200,
+        message = "Client address must be between 5 and 200 characters."
+    ))]
+    pub String,
+);
+
+impl From<String> for ClientAddress {
+    fn from(address: String) -> Self {
+        ClientAddress(address)
+    }
+}
+
+impl fmt::Display for ClientAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type )]
+// sqlx::Type -> ensina o SQLx a ler/escrever PlanType no banco
+// type_name = nome do tipo no PostgreSQL
+// rename_all = converte PascalCase → lowercase automaticamente
+// Diaria → "diaria" no banco
+#[sqlx(type_name = "plan_type", rename_all = "lowercase")]
+pub enum PlanType {
+    Diaria,
+    Mensal,
+    Trimestral,
+    Semestral,
+    Anual,
+}
+
+// Display para aparecer como texto
+impl fmt::Display for PlanType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlanType::Diaria      => write!(f, "diaria"),
+            PlanType::Mensal      => write!(f, "mensal"),
+            PlanType::Trimestral  => write!(f, "trimestral"),
+            PlanType::Semestral   => write!(f, "semestral"),
+            PlanType::Anual       => write!(f, "anual"),
+        }
+    }
+}
+
+// client_model
+
+// sqlx::FromRow -> SQLx converte linha da tabela Clients para Client automaticamente
+// NÃO tem Validate — Client é o dado que VEM do banco
+// dados do banco já foram validados quando foram inseridos
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Client {
+    pub id: Uuid,                  // gerado pelo banco
+    pub name: String,              // String simples — dado do banco
+    pub email: String,             // String simples — dado do banco
+    pub address: String,           // String simples — dado do banco
+    pub plan: PlanType,            // enum — mapeado pelo sqlx::Type
+    pub created_at: NaiveDateTime, // gerado pelo banco
+    pub updated_at: NaiveDateTime, // gerado pelo banco
+}
+
+// model de dados que vem do cliente para cria 
+// sqlx::FromRow -> busca do banco depois de criar com RETURNING
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate, sqlx::FromRow)]
+pub struct CreateClientDto {
+    #[validate] // ← delega a validação para ClientName (já tem regras dentro)
+    pub name: ClientName,
+
+    #[validate] // ← delega para ClientEmail
+    pub email: ClientEmail,
+
+    #[validate] // ← delega para ClientAddress
+    pub address: ClientAddress,
+
+    pub plan: PlanType, // ← enum fechado — sem validação extra necessária
+}
+
+// model de dados que vem do cliente para atualização 
+// Todos os campos são Option - client envia só o que quer mudar
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate)]
+pub struct UpdateClientDto {
+    // Option<String> → cliente pode ou não enviar o nome
+    #[validate(length(
+        min = 3,
+        max = 100,
+        message = "Nome deve ter entre 3 e 100 caracteres"
+    ))]
+    pub name: Option<String>, // Some("João") = enviou | None = não enviou
+
+    #[validate(email(message = "Email inválido"))]
+    pub email: Option<String>,
+
+    #[validate(length(
+        min = 5,
+        max = 200,
+        message = "Endereço deve ter entre 5 e 200 caracteres"
+    ))]
+    pub address: Option<String>,
+
+    pub plan: Option<PlanType>, // None = não quer mudar o plano
+}
 ````
