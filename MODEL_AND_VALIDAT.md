@@ -276,3 +276,94 @@ pub struct UpdateClientDto {
     pub plan: Option<PlanType>, // None = não quer mudar o plano
 }
 ````
+
+## opção de model com valores default
+
+- Ex: na regra de negócio caso na criação do client não seja enviado plano ele deve ser criado como Experimental
+
+Opção 1 - com fn mais simples mas o defalt pode dar problemas em testes
+
+````
+#[sqlx(type_name = "plan_type", rename_all = "lowercase")]
+pub enum PlanType {
+    Experimental,
+    Diaria,
+    Mensal,
+    Trimestral,
+    Semestral,
+    Anual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate, sqlx::FromRow)]
+pub struct CreateClientDto {
+    #[validate] // ← delega a validação para ClientName (já tem regras dentro)
+    pub name: ClientName,
+
+    #[validate] // ← delega para ClientEmail
+    pub email: ClientEmail,
+
+    #[validate] // ← delega para ClientAddress
+    pub address: ClientAddress,
+
+    #[serde(default = "default_plan")]
+    pub plan: PlanType, // ← enum fechado — sem validação extra necessária
+}
+
+fn defalt_plan() -> PlanType {
+   PlanType::Experimental
+}
+````
+
+Opção 2- usando impl e o default é criado no enum
+
+````
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "plan_type", rename_all = "lowercase")]
+pub enum PlanType {
+    Experimental,
+    Diaria,
+    Mensal,
+    Trimestral,
+    Semestral,
+    Anual,
+}
+
+// Implementamos o Default para o Enum (O jeito Rust de ser)
+
+impl Default for PlanType {
+    fn default() -> Self {
+        PlanType::Experimental
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct CreateClientDto {
+    #[validate]
+    pub name: ClientName,
+    #[validate]
+    pub email: ClientEmail,
+    #[validate]
+    pub address: ClientAddress,
+
+    // 2. A MÁGICA: O Serde agora usa o Default::default() do próprio Enum!
+    #[serde(default)] 
+    pub plan: PlanType,
+}
+````
+
+
+Resumo:
+┌─────────────────────────────────────────────────────┐
+│  struct ClientName(pub String)                       │
+│       └── define o DADO que a struct carrega         │
+├─────────────────────────────────────────────────────┤
+│  impl ClientName { ... }                             │
+│       └── métodos PRÓPRIOS da struct                 │
+├─────────────────────────────────────────────────────┤
+│  impl From<String> for ClientName { ... }            │
+│       └── implementa uma TRAIT (contrato externo)    │
+│           "ensina" a struct a se converter de String │
+├─────────────────────────────────────────────────────┤
+│  impl Display for ClientName { ... }                 │
+│       └── "ensina" a struct a se exibir com {}       │
+└─────────────────────────────────────────────────────┘
