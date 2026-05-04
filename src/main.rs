@@ -3,8 +3,8 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use dotenv::dotenv;
 use std::env;
 
-// mod models;
-// mod repositories;
+mod models;
+mod repositories;
 // mod services;
 // mod handlers;
 // mod routes;
